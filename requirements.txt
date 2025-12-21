@@ -1,0 +1,9 @@
+opencv-python>=4.8
+Pillow
+scikit-image
+scikit-learn
+joblib
+numpy
+fastapi
+uvicorn[standard]
+python-multipart

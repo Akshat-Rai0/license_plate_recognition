@@ -1,0 +1,22 @@
+{
+  "blur_kernel": [
+    3,
+    3
+  ],
+  "canny_threshold1": 50,
+  "canny_threshold2": 150,
+  "min_area": 300,
+  "ar_min": 2.0,
+  "ar_max": 4.0,
+  "binarize_block_size": 9,
+  "binarize_C": 10,
+  "morph_kernel_size": [
+    3,
+    3
+  ],
+  "char_min_area": 50,
+  "height_ratio_min": 0.3,
+  "height_ratio_max": 0.85,
+  "aspect_ratio_min": 0.15,
+  "aspect_ratio_max": 0.8
+}
