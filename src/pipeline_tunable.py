@@ -195,6 +195,11 @@ def recognize_plate_tunable(image_path, params):
     features = np.clip(features, -10.0, 10.0)
     
     predictions = model.predict(features)
+    
+    # Decode predictions if label encoder exists
+    if hasattr(model, 'label_encoder_'):
+        predictions = model.label_encoder_.inverse_transform(predictions)
+    
     plate_text = "".join(predictions)
     
     return plate_text

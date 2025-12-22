@@ -27,11 +27,18 @@ PARAM_GRID = {
 
 def calculate_accuracy(predicted, ground_truth):
     """Calculate character-level and exact match accuracy"""
-    if len(predicted) != len(ground_truth):
+    if not predicted or not ground_truth:
         return 0.0, False
     
+    # Calculate accuracy based on the longer string to avoid division by zero
+    max_len = max(len(predicted), len(ground_truth))
+    min_len = min(len(predicted), len(ground_truth))
+    
+    # Count matching characters at corresponding positions
     correct = sum(p == g for p, g in zip(predicted, ground_truth))
-    char_accuracy = correct / len(ground_truth)
+    
+    # Penalize for length mismatch
+    char_accuracy = correct / max_len
     exact_match = predicted == ground_truth
     
     return char_accuracy, exact_match
@@ -116,9 +123,14 @@ def grid_search():
         
         if result['success']:
             # Score: prioritize exact match, then char accuracy, then low Levenshtein distance
-            score = (100 if result['exact_match'] else 0) + \
-                    result['char_accuracy'] * 50 - \
-                    result['levenshtein'] * 5
+            # Normalize Levenshtein distance to 0-1 range (inversely proportional)
+            max_distance = len(GROUND_TRUTH)
+            normalized_distance = 1.0 - (result['levenshtein'] / max_distance if max_distance > 0 else 0)
+            
+            # Weighted scoring: exact match (weight=50), char accuracy (weight=30), distance (weight=20)
+            score = (50.0 if result['exact_match'] else 0.0) + \
+                    (result['char_accuracy'] * 30.0) + \
+                    (normalized_distance * 20.0)
             
             if score > best_score:
                 best_score = score

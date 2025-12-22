@@ -1,7 +1,7 @@
 import joblib
 import numpy as np
 from sklearn.svm import LinearSVC
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.pipeline import Pipeline
 
 def train_model(X, y):
@@ -15,6 +15,12 @@ def train_model(X, y):
     feature_std = np.std(X, axis=0)
     feature_std[feature_std == 0] = 1.0  # Set zero std to 1 to avoid division
     
+    # Encode labels if they are strings
+    label_encoder = None
+    if y.dtype == object or y.dtype.kind in ('U', 'S'):  # String type
+        label_encoder = LabelEncoder()
+        y = label_encoder.fit_transform(y)
+    
     # Use StandardScaler with better settings
     model = Pipeline([
         ("scaler", StandardScaler(with_mean=True, with_std=True)),
@@ -22,6 +28,11 @@ def train_model(X, y):
     ])
 
     model.fit(X, y)
+    
+    # Store label encoder with the model for decoding predictions
+    if label_encoder is not None:
+        model.label_encoder_ = label_encoder
+    
     return model
 
 

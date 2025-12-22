@@ -178,6 +178,11 @@ def recognize_plate(image_path: str) -> str:
     features = np.clip(features, -10.0, 10.0)
     
     predictions = model.predict(features)
+    
+    # Decode predictions if label encoder exists
+    if hasattr(model, 'label_encoder_'):
+        predictions = model.label_encoder_.inverse_transform(predictions)
+    
     plate_text = "".join(predictions)
     
     # Post-processing: validate and correct common errors

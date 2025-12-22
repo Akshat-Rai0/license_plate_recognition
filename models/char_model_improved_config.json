@@ -1,0 +1,11 @@
+{
+  "use_augmentation": true,
+  "augmentations_per_image": 3,
+  "use_ensemble": true,
+  "use_combined_features": true,
+  "num_samples": 1360,
+  "num_classes": 34,
+  "feature_dim": 314,
+  "cv_mean": 0.8147058823529412,
+  "cv_std": 0.04403177918111727
+}
