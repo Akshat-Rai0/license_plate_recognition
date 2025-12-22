@@ -1,8 +1,7 @@
 import joblib
 import numpy as np
 from sklearn.svm import SVC
-from sklearn.ensemble import RandomForestClassifier, VotingClassifier, GradientBoostingClassifier
-from sklearn.neural_network import MLPClassifier
+from sklearn.ensemble import RandomForestClassifier, VotingClassifier
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score
@@ -10,7 +9,7 @@ from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_sc
 def train_ensemble_model(X, y, validation_split=0.2, use_grid_search=False):
     """
     Train an ensemble of models for better accuracy.
-    Combines SVM, Random Forest, and Neural Network.
+    Combines SVM and Random Forest.
     """
     print("=" * 80)
     print("Training Ensemble Model")
@@ -19,7 +18,7 @@ def train_ensemble_model(X, y, validation_split=0.2, use_grid_search=False):
     # Pre-process features
     X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
     
-    # Encode string labels to integers for MLPClassifier compatibility
+    # Encode string labels to integers
     label_encoder = LabelEncoder()
     y_encoded = label_encoder.fit_transform(y)
     
@@ -56,22 +55,7 @@ def train_ensemble_model(X, y, validation_split=0.2, use_grid_search=False):
         ))
     ])
     
-    # 3. Neural Network
-    mlp_model = Pipeline([
-        ('scaler', StandardScaler()),
-        ('mlp', MLPClassifier(
-            hidden_layer_sizes=(256, 128, 64),
-            activation='relu',
-            solver='adam',
-            alpha=0.0001,
-            batch_size='auto',
-            learning_rate='adaptive',
-            max_iter=1000,
-            random_state=42,
-            early_stopping=True,
-            validation_fraction=0.1
-        ))
-    ])
+
     
     # Train individual models
     print("Training individual models...")
@@ -90,29 +74,22 @@ def train_ensemble_model(X, y, validation_split=0.2, use_grid_search=False):
     print(f"   Train accuracy: {rf_train_acc:.4f}")
     print(f"   Validation accuracy: {rf_val_acc:.4f}")
     
-    print("3. Training Neural Network...")
-    mlp_model.fit(X_train, y_train)
-    mlp_train_acc = mlp_model.score(X_train, y_train)
-    mlp_val_acc = mlp_model.score(X_val, y_val)
-    print(f"   Train accuracy: {mlp_train_acc:.4f}")
-    print(f"   Validation accuracy: {mlp_val_acc:.4f}")
-    print()
+
     
     # Create ensemble with weighted voting based on validation accuracy
     # Normalize weights to sum to number of models (for proper VotingClassifier weighting)
-    total_acc = svm_val_acc + rf_val_acc + mlp_val_acc
+    total_acc = svm_val_acc + rf_val_acc
     if total_acc > 0:
-        weights = [svm_val_acc / total_acc * 3, rf_val_acc / total_acc * 3, mlp_val_acc / total_acc * 3]
+        weights = [svm_val_acc / total_acc * 2, rf_val_acc / total_acc * 2]
     else:
-        weights = [1.0, 1.0, 1.0]  # Equal weights if all accuracies are 0
+        weights = [1.0, 1.0]  # Equal weights if all accuracies are 0
     
-    print(f"Ensemble weights (SVM, RF, MLP): {[f'{w:.2f}' for w in weights]}")
+    print(f"Ensemble weights (SVM, RF): {[f'{w:.2f}' for w in weights]}")
     
     ensemble = VotingClassifier(
         estimators=[
             ('svm', svm_model),
-            ('rf', rf_model),
-            ('mlp', mlp_model)
+            ('rf', rf_model)
         ],
         voting='soft',
         weights=weights
@@ -130,7 +107,7 @@ def train_ensemble_model(X, y, validation_split=0.2, use_grid_search=False):
     print("=" * 80)
     print(f"Ensemble train accuracy: {ensemble_train_acc:.4f}")
     print(f"Ensemble validation accuracy: {ensemble_val_acc:.4f}")
-    print(f"Improvement over best individual: {ensemble_val_acc - max(svm_val_acc, rf_val_acc, mlp_val_acc):.4f}")
+    print(f"Improvement over best individual: {ensemble_val_acc - max(svm_val_acc, rf_val_acc):.4f}")
     print("=" * 80)
     
     # Store label encoder with the ensemble for decoding predictions
