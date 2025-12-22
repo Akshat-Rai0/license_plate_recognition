@@ -27,7 +27,7 @@ from src.character_segmentation import (
     segment_characters_hybrid,
 )
 from src.features_improved import extract_features_from_characters
-from src.model import load_model
+from src.model_improved import load_model
 
 MODEL_PATH = "models/char_svm.pkl"
 PARAMS_FILE = "best_params.json"
