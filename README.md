@@ -171,3 +171,6 @@ To add new training data:
 - Nigerian Plates Dataset for initial training data
 - scikit-learn for machine learning models
 - OpenCV for computer vision operations
+
+## TIP 
+- TO MAKE THE MODEL WORK THE BEST ENSURE THAT THE IMAGE IS OF HIGH QUALITY AND THE TEXT IS LINEAR AND NOT AT AN ANGLE OR NOT IN WEIRD FORMAT
