@@ -24,11 +24,8 @@ from src.character_segmentation import (
     filter_character_contours_tunable,
 )
 from src.pytorch_model import SimpleCNN
-# Ensure we use the correct post_process file
-try:
-    from src.post_process import validate_and_correct_plate, filter_valid_characters
-except ImportError:
-    from src.post_process_improved import validate_and_correct_plate, filter_valid_characters
+from src.post_process import validate_and_correct_plate, filter_valid_characters
+
 
 MODEL_PATH = "models/char_cnn.pth"
 LABEL_ENCODER_PATH = "models/label_encoder.json"
