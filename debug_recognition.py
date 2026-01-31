@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+
 """
 Debug script to visualize each step of the license plate recognition pipeline.
 Usage: python debug_recognition.py <image_path>
@@ -6,11 +6,13 @@ Usage: python debug_recognition.py <image_path>
 import sys
 import os
 import shutil
-
 import json
 import cv2
 import numpy as np
+import torch
 from pathlib import Path
+from torchvision import transforms
+from PIL import Image
 
 from src.io_utils import load_image
 from src.preprocess import resize_image, convert_to_grayscale, enhance_contrast, reduce_noise
@@ -22,91 +24,26 @@ from src.plate_detection import (
     normalize_orientation,
 )
 from src.character_segmentation import (
-    find_character_contours,
-    extract_and_resize_characters,
     segment_characters_hybrid,
+    extract_and_resize_characters,
 )
-from src.features_improved import extract_features_from_characters
-from src.model_improved import load_model
+# Use pipeline imports or direct definitions?
+# We need get_model_and_labels from pipeline or re-implement
+from src.pipeline import get_model_and_labels, load_best_params
+from src.pipeline import (
+    binarize_plate_tunable, 
+    clean_binary_plate_tunable, 
+    detect_plate,
+    PARAMS_FILE,
+    MODEL_PATH,
+    LABEL_ENCODER_PATH
+)
 
-MODEL_PATH = "models/char_svm.pkl"
-PARAMS_FILE = "best_params.json"
+
 OUTPUT_DIR = "debug_output"
 
-def load_best_params():
-    """Load best parameters from JSON file, or use defaults"""
-    if os.path.exists(PARAMS_FILE):
-        with open(PARAMS_FILE, 'r') as f:
-            return json.load(f)
-    return {
-        'blur_kernel': [5, 5],
-        'canny_threshold1': 50,
-        'canny_threshold2': 150,
-        'min_area': 500,
-        'ar_min': 1.5,
-        'ar_max': 6.0,
-        'binarize_block_size': 11,
-        'binarize_C': 12,
-        'morph_kernel_size': [3, 3],
-        'char_min_area': 50,
-        'height_ratio_min': 0.3,
-        'height_ratio_max': 0.95,
-        'aspect_ratio_min': 0.15,
-        'aspect_ratio_max': 1.2
-    }
+device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
 
-def return_edges_tunable(image, blur_kernel, canny_threshold1, canny_threshold2):
-    if isinstance(blur_kernel, list):
-        blur_kernel = tuple(blur_kernel)
-    blurred = cv2.GaussianBlur(image, blur_kernel, sigmaX=0)
-    edges = cv2.Canny(blurred, canny_threshold1, canny_threshold2)
-    return edges
-
-def binarize_plate_tunable(plate_gray, block_size, C):
-    binary_plate = cv2.adaptiveThreshold(
-        plate_gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C,
-        cv2.THRESH_BINARY_INV, block_size, C
-    )
-    return binary_plate
-
-def clean_binary_plate_tunable(binary_plate, kernel_size):
-    if isinstance(kernel_size, list):
-        kernel_size = tuple(kernel_size)
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, kernel_size)
-    closed = cv2.morphologyEx(binary_plate, cv2.MORPH_CLOSE, kernel)
-    cleaned_plate = cv2.morphologyEx(closed, cv2.MORPH_OPEN, kernel)
-    return cleaned_plate
-
-def detect_plate(image, params):
-    gray = convert_to_grayscale(image)
-    edges = return_edges_tunable(
-        gray,
-        params['blur_kernel'],
-        params['canny_threshold1'],
-        params['canny_threshold2']
-    )
-    contours = get_contours(edges)
-    contours = filter_contours(contours, min_area=params['min_area'])
-
-    candidates = []
-    for contour in contours:
-        corners = get_plate_corners(contour)
-        if corners is None:
-            continue
-        x, y, w, h = cv2.boundingRect(contour)
-        ar = w / float(h) if h > 0 else 0
-        if params['ar_min'] <= ar <= params['ar_max']:
-            score = abs(ar - 3.5)
-            candidates.append((score, corners))
-
-    if candidates:
-        candidates.sort(key=lambda x: x[0])
-        best_corners = candidates[0][1]
-        plate = four_point_transform(image, best_corners)
-        norm_plate = normalize_orientation(plate)
-        return norm_plate
-
-    raise RuntimeError("License plate not detected in image")
 
 def debug_recognition(image_path: str):
     """Debug the recognition pipeline with visual output"""
@@ -120,20 +57,27 @@ def debug_recognition(image_path: str):
     print(f"Debugging: {image_path}")
     print(f"{'='*60}\n")
     
-    # Load parameters and model
+    # Load parameters
     params = load_best_params()
     print(f"Parameters loaded:")
     print(f"  - char_min_area: {params['char_min_area']}")
-    print(f"  - height_ratio: {params['height_ratio_min']} - {params['height_ratio_max']}")
-    print(f"  - aspect_ratio: {params['aspect_ratio_min']} - {params['aspect_ratio_max']}")
     print(f"  - binarize_block_size: {params['binarize_block_size']}")
-    print(f"  - binarize_C: {params['binarize_C']}\n")
     
-    model = load_model(MODEL_PATH)
-    
+    # Load model
+    print("Loading PyTorch model...")
+    try:
+        model, label_map = get_model_and_labels()
+    except Exception as e:
+        print(f"Error loading model: {e}")
+        return
+
     # Step 1: Load and preprocess image
     print("Step 1: Loading image...")
     image = load_image(image_path)
+    if image is None:
+        print("Error: Could not load image")
+        return
+        
     resized = resize_image(image)
     cv2.imwrite(f"{OUTPUT_DIR}/1_resized.png", resized)
     print(f"  ✓ Image loaded: {resized.shape}")
@@ -186,18 +130,6 @@ def debug_recognition(image_path: str):
     
     if len(char_boxes) == 0:
         print("\n⚠️  WARNING: No characters detected!")
-        print("\nTrying different parameters...")
-        
-        # Try with more lenient parameters
-        lenient_params = params.copy()
-        lenient_params['char_min_area'] = 20
-        lenient_params['height_ratio_min'] = 0.2
-        lenient_params['height_ratio_max'] = 0.95
-        lenient_params['aspect_ratio_min'] = 0.1
-        lenient_params['aspect_ratio_max'] = 1.5
-        
-        char_boxes = segment_characters_hybrid(cleaned_plate, cleaned_plate.shape, lenient_params)
-        print(f"  With lenient params: Found {len(char_boxes)} character boxes")
     
     # Draw character boxes
     plate_with_boxes = cv2.cvtColor(cleaned_plate, cv2.COLOR_GRAY2BGR)
@@ -206,40 +138,43 @@ def debug_recognition(image_path: str):
         cv2.putText(plate_with_boxes, str(i), (x, y-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
     cv2.imwrite(f"{OUTPUT_DIR}/6_character_boxes.png", plate_with_boxes)
     
-    for i, (x, y, w, h) in enumerate(char_boxes):
-        print(f"    Char {i}: x={x}, y={y}, w={w}, h={h}, area={w*h}")
-    
-    if len(char_boxes) == 0:
-        print("\n⚠️  Cannot proceed without characters")
-        return
-    
     # Step 7: Extract and predict
-    print("\nStep 7: Extracting and recognizing characters...")
-    characters = extract_and_resize_characters(
-        cleaned_plate, char_boxes, target_size=(28, 28)
-    )
-    
-    # Save individual characters
-    for i, char in enumerate(characters):
-        cv2.imwrite(f"{OUTPUT_DIR}/7_char_{i}.png", char)
-    
-    features = extract_features_from_characters(characters, use_combined=True)
-    features = np.nan_to_num(features, nan=0.0, posinf=0.0, neginf=0.0)
-    features = np.clip(features, -10.0, 10.0)
-    
-    predictions = model.predict(features)
-    
-    if hasattr(model, 'label_encoder_'):
-        predictions = model.label_encoder_.inverse_transform(predictions)
-    
-    plate_text = "".join(predictions)
-    
-    print(f"\n{'='*60}")
-    print(f"RESULT: {plate_text}")
-    print(f"{'='*60}\n")
-    print(f"Debug images saved to: {OUTPUT_DIR}/")
-    
-    return plate_text
+    if len(char_boxes) > 0:
+        print("\nStep 7: Recognizing characters...")
+        characters = extract_and_resize_characters(
+            cleaned_plate, char_boxes, target_size=(28, 28)
+        )
+        
+        # Save individual characters
+        for i, char in enumerate(characters):
+            cv2.imwrite(f"{OUTPUT_DIR}/7_char_{i}.png", char)
+        
+        preds = []
+        transform_pipeline = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.5,), (0.5,))
+        ])
+        
+        with torch.no_grad():
+            for i, char_img in enumerate(characters):
+                pil_img = Image.fromarray(char_img)
+                input_tensor = transform_pipeline(pil_img).unsqueeze(0).to(device)
+                
+                output = model(input_tensor)
+                _, predicted = torch.max(output.data, 1)
+                
+                idx = predicted.item()
+                char_str = label_map.get(idx, '?')
+                preds.append(char_str)
+                print(f"  Char {i}: Predicted '{char_str}' (Class {idx})")
+        
+        plate_text = "".join(preds)
+        print(f"\nResult: {plate_text}")
+    else:
+        print("\nSkipping recognition (no characters)")
+
+    print(f"\nDebug output saved to {OUTPUT_DIR}")
+
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
@@ -257,3 +192,4 @@ if __name__ == "__main__":
         print(f"\n✗ Error: {e}")
         import traceback
         traceback.print_exc()
+
